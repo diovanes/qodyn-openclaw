@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0",
+  "releaseVersion": "1.0.0",
+  "minimumOpenClawVersion": "2026.7.1",
+  "gitCommit": "unknown",
+  "builtAt": "2026-07-24T20:18:56.090Z",
+  "agents": [
+    {
+      "id": "main",
+      "description": "Agente principal de atendimento e coordenação.",
+      "files": [
+        "AGENTS.md",
+        "SOUL.md",
+        "IDENTITY.md",
+        "USER.md",
+        "TOOLS.md",
+        "HEARTBEAT.md"
+      ],
+      "skills": [
+        "safe-external-action",
+        "structured-request"
+      ]
+    },
+    {
+      "id": "support",
+      "description": "Agente especializado em suporte e triagem.",
+      "files": [
+        "AGENTS.md",
+        "SOUL.md",
+        "IDENTITY.md",
+        "USER.md",
+        "TOOLS.md"
+      ],
+      "skills": [
+        "incident-triage",
+        "safe-external-action"
+      ]
+    }
+  ]
+}

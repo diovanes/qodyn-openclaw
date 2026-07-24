@@ -1,0 +1,13 @@
+{
+  // Exemplo ilustrativo; valide contra a versão instalada.
+  agents: {
+    defaults: { workspace: "~/.openclaw/workspaces/main" },
+    entries: [
+      { id: "main", workspace: "~/.openclaw/workspaces/main" },
+      { id: "support", workspace: "~/.openclaw/workspaces/support" },
+    ],
+  },
+  skills: {
+    load: { watch: true, watchDebounceMs: 500 },
+  },
+}

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"; source "$SCRIPT_DIR/common.sh"; RELEASE="";ENVIRONMENT=local;AGENT=""
+while [[ $# -gt 0 ]]; do case "$1" in --release)RELEASE="$2";shift 2;;--environment)ENVIRONMENT="$2";shift 2;;--agent)AGENT="$2";shift 2;;*)fail "Argumento: $1";;esac;done
+[[ -n "$RELEASE" && -n "$AGENT" ]]||fail '--release e --agent obrigatórios'; ROOT="$(cd "$SCRIPT_DIR/.."&&pwd)"; load_environment "$ENVIRONMENT" "$ROOT"; WR="$(resolve_path "${OPENCLAW_WORKSPACE_ROOT:-$HOME/.openclaw/workspaces}")"; BIN="${OPENCLAW_BIN:-openclaw}"; TARGET="$WR/$AGENT"; verify_checksums "$(cd "$RELEASE"&&pwd)"; test -f "$TARGET/AGENTS.md"; test -f "$TARGET/SOUL.md"; test -f "$TARGET/.prompt-release.json"; test -d "$TARGET/skills"
+if command -v "$BIN" >/dev/null; then "$BIN" --version; [[ "${OPENCLAW_RUN_CONFIG_VALIDATE:-true}" != true ]]||"$BIN" config validate; [[ "${OPENCLAW_RUN_SECURITY_AUDIT:-false}" != true ]]||"$BIN" security audit; [[ "${OPENCLAW_RUN_DEEP_SECURITY_AUDIT:-false}" != true ]]||"$BIN" security audit --deep; [[ "${OPENCLAW_RUN_GATEWAY_STATUS:-false}" != true ]]||"$BIN" gateway status --deep; [[ "${OPENCLAW_RUN_AGENTS_LIST:-false}" != true ]]||"$BIN" agents list --json; else log 'OpenClaw indisponível; smoke limitado ao filesystem'; fi; log 'Smoke test concluído'

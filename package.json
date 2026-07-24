@@ -1,0 +1,21 @@
+{
+  "name": "openclaw-prompt-management-template",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitOps template for OpenClaw prompt and skill management",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "lint:md": "node scripts/lint-markdown.mjs",
+    "validate": "node scripts/validate.mjs",
+    "test:prompts": "node scripts/test-prompts.mjs",
+    "test:shell": "bash scripts/check-shell.sh",
+    "scan:secrets": "bash scripts/scan-secrets.sh",
+    "check": "npm run lint:md && npm run validate && npm run test:prompts && npm run test:shell && npm run scan:secrets",
+    "build": "node scripts/build.mjs",
+    "package": "bash scripts/package-release.sh"
+  }
+}

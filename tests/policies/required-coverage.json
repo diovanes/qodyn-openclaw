@@ -1,0 +1,9 @@
+{
+  "requiredCategories": [
+    "security",
+    "external-action",
+    "idempotency",
+    "incident",
+    "safety"
+  ]
+}
