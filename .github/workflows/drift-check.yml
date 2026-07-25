@@ -1,0 +1,52 @@
+name: Check prompt deployment drift
+
+on:
+  schedule:
+    - cron: "17 8 * * *"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to inspect"
+        required: true
+        default: production
+        type: choice
+        options: [staging, production]
+      agent:
+        description: "Agent ID"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prompt-drift-${{ inputs.environment || 'production' }}-${{ inputs.agent || 'main' }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: Inspect deployed release metadata
+    runs-on: ${{ (inputs.environment || 'production') == 'production' && fromJSON('["self-hosted","linux","openclaw-production"]') || fromJSON('["self-hosted","linux","openclaw-staging"]') }}
+    environment:
+      name: ${{ inputs.environment || 'production' }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Read active release metadata
+        env:
+          OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
+          AGENT: ${{ inputs.agent || 'main' }}
+        run: |
+          FILE="${OPENCLAW_WORKSPACE_ROOT}/${AGENT}/.prompt-release.json"
+          test -f "${FILE}"
+          cat "${FILE}"
+          VERSION="$(node -e "const fs=require('fs'); console.log(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).releaseVersion)" "${FILE}")"
+          COMMIT="$(node -e "const fs=require('fs'); console.log(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).gitCommit)" "${FILE}")"
+          {
+            echo "## Active OpenClaw prompt release"
+            echo "- Environment: ${{ inputs.environment || 'production' }}"
+            echo "- Agent: ${AGENT}"
+            echo "- Version: ${VERSION}"
+            echo "- Commit: ${COMMIT}"
+          } >> "$GITHUB_STEP_SUMMARY"

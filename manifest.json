@@ -1,74 +1,43 @@
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "workspace-v1",
   "project": {
-    "name": "openclaw-prompt-management-template",
-    "owner": "platform-ai",
-    "description": "Gestão GitOps dos prompts e skills dos agentes OpenClaw."
+    "name": "openclaw-workspace",
+    "description": "Espelho versionado da estrutura do workspace OpenClaw."
   },
-  "release": {
-    "version": "1.0.0",
-    "minimumOpenClawVersion": "2026.7.1"
+  "workspace": {
+    "agents": [
+      "admin_master",
+      "aura_test01_default",
+      "auraflow_main",
+      "auraflow_orchestrator_isis",
+      "main",
+      "mpp_isis"
+    ],
+    "sharedDirectories": [
+      ".openclaw",
+      "clients",
+      "memory",
+      "state",
+      "Workflow"
+    ]
   },
-  "policy": {
-    "requiredFiles": [
-      "AGENTS.md",
-      "SOUL.md"
-    ],
-    "optionalFiles": [
-      "IDENTITY.md",
-      "USER.md",
-      "TOOLS.md",
-      "HEARTBEAT.md",
-      "BOOTSTRAP.md"
-    ],
-    "unmanagedFiles": [
-      "MEMORY.md",
-      "memory"
-    ],
-    "maxBytes": {
-      "AGENTS.md": 24000,
-      "SOUL.md": 12000,
-      "IDENTITY.md": 4000,
-      "USER.md": 12000,
-      "TOOLS.md": 16000,
-      "HEARTBEAT.md": 6000,
-      "BOOTSTRAP.md": 6000,
-      "SKILL.md": 24000
-    }
-  },
-  "agents": [
-    {
-      "id": "main",
-      "source": "agents/main",
-      "description": "Agente principal de atendimento e coordenação.",
-      "files": [
-        "AGENTS.md",
-        "SOUL.md",
-        "IDENTITY.md",
-        "USER.md",
-        "TOOLS.md",
-        "HEARTBEAT.md"
-      ],
-      "skills": [
-        "safe-external-action",
-        "structured-request"
-      ]
-    },
-    {
-      "id": "support",
-      "source": "agents/support",
-      "description": "Agente especializado em suporte e triagem.",
-      "files": [
-        "AGENTS.md",
-        "SOUL.md",
-        "IDENTITY.md",
-        "USER.md",
-        "TOOLS.md"
-      ],
-      "skills": [
-        "incident-triage",
-        "safe-external-action"
-      ]
-    }
+  "globalConfiguration": [
+    "config/openclaw.json.example",
+    "config/global/plugins/installs.json.example",
+    "config/global/credentials",
+    "config/global/devices",
+    "config/global/logs"
+  ],
+  "runtimeExcluded": [
+    "workspace-state.json",
+    "auth-profiles.json",
+    "auth-state.json",
+    "models.json",
+    "codex-home",
+    "sessions",
+    "logs",
+    "credentials",
+    "devices",
+    "client memory"
   ]
 }

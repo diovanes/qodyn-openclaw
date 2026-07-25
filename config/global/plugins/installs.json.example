@@ -1,0 +1,10 @@
+{
+  "note": "O registro real de instalação é estado de runtime e não deve conter caminhos ou credenciais sensíveis.",
+  "mpp-integration-plugin": {
+    "id": "mpp-integration-plugin",
+    "version": "0.1.0",
+    "source": "path",
+    "enabled": true
+  }
+}
+

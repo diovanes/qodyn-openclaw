@@ -1,0 +1,207 @@
+{
+  "gateway": {
+    "mode": "local",
+    "auth": "[REDACTED]",
+    "port": 18789,
+    "bind": "loopback",
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record",
+        "contacts.add",
+        "calendar.add",
+        "reminders.add",
+        "sms.send",
+        "sms.search"
+      ]
+    },
+    "controlUi": {
+      "allowedOrigins": [
+        "http://localhost:18789",
+        "http://127.0.0.1:18789"
+      ]
+    }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/root/.openclaw/workspace",
+      "models": {
+        "openai/gpt-5.5": {
+          "alias": "GPT",
+          "agentRuntime": {
+            "id": "codex"
+          }
+        }
+      },
+      "model": {
+        "primary": "openai/gpt-5.5"
+      },
+      "compaction": {
+        "mode": "safeguard"
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "dir": "/root/.openclaw/workspace/agents/main",
+        "model": "openai/gpt-5.5",
+        "tools": {
+          "alsoAllow": [
+            "agents_list"
+          ]
+        }
+      },
+      {
+        "id": "aura_test01_default",
+        "name": "aura_test01_default",
+        "dir": "/root/.openclaw/workspace/agents/aura_test01_default",
+        "model": "openai/gpt-5.5"
+      },
+      {
+        "id": "auraflow_main",
+        "name": "auraflow_main",
+        "dir": "/root/.openclaw/workspace/agents/auraflow_main"
+      },
+      {
+        "id": "admin_master",
+        "name": "admin_master",
+        "dir": "/root/.openclaw/workspace/agents/admin_master",
+        "model": "openai/gpt-5.5"
+      },
+      {
+        "id": "auraflow_orchestrator_isis",
+        "name": "auraflow_orchestrator_isis",
+        "dir": "/root/.openclaw/workspace/agents/auraflow_orchestrator_isis"
+      },
+      {
+        "id": "mpp_isis",
+        "name": "mpp_isis",
+        "dir": "/root/.openclaw/workspace/agents/mpp_isis",
+        "tools": {
+          "alsoAllow": [
+            "mpp-integration-plugin",
+            "mpp_resolve_runtime_context",
+            "mpp_memory_provision_client",
+            "mpp_memory_resolve_client",
+            "mpp_memory_search",
+            "mpp_memory_write",
+            "mpp_memory_append_session"
+          ]
+        }
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "type": "route",
+      "agentId": "aura_test01_default",
+      "match": {
+        "channel": "whatsapp",
+        "accountId": "wa_u_test01"
+      }
+    },
+    {
+      "type": "route",
+      "agentId": "mpp_isis",
+      "match": {
+        "channel": "whatsapp",
+        "accountId": "atendimento"
+      }
+    },
+    {
+      "type": "route",
+      "agentId": "admin_master",
+      "match": {
+        "channel": "telegram",
+        "accountId": "op_admin"
+      }
+    }
+  ],
+  "channels": {
+    "whatsapp": {
+      "enabled": true,
+      "accounts": {
+        "atendimento": {
+          "enabled": true
+        },
+        "default": {
+          "dmPolicy": "pairing",
+          "groupPolicy": "allowlist",
+          "groupAllowFrom": [
+            "+554891117339"
+          ]
+        }
+      }
+    },
+    "telegram": {
+      "enabled": true,
+      "streaming": {
+        "mode": "partial",
+        "preview": {
+          "toolProgress": true
+        }
+      },
+      "accounts": {
+        "op_admin": {
+          "enabled": true,
+          "name": "auraflow_dev_bot",
+          "botToken": "[REDACTED]",
+          "groups": {
+            "*": {
+              "requireMention": false
+            },
+            "-1003892262468": {
+              "requireMention": false
+            }
+          }
+        }
+      }
+    }
+  },
+  "plugins": {
+    "allow": [
+      "openai",
+      "whatsapp",
+      "telegram",
+      "memory-core",
+      "mpp-integration-plugin",
+      "codex"
+    ],
+    "entries": {
+      "openai": {
+        "enabled": true
+      },
+      "mpp-integration-plugin": {
+        "enabled": true,
+        "config": {
+          "mppBackendBaseUrl": "http://100.121.255.65:3000",
+          "mppBackendApiKey": "[REDACTED]",
+          "memoryRootPath": "/root/.openclaw/workspace",
+          "INTERNAL_CONTENT_API_KEY": "[REDACTED]"
+        }
+      },
+      "codex": {
+        "enabled": true
+      }
+    }
+  },
+  "tools": {
+    "profile": "coding",
+    "sessions": {
+      "visibility": "all"
+    },
+    "agentToAgent": {
+      "enabled": true,
+      "allow": [
+        "admin_master",
+        "auraflow_orchestrator_isis",
+        "mpp_isis"
+      ]
+    }
+  }
+}

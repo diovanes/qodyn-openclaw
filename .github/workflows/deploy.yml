@@ -1,0 +1,223 @@
+name: Deploy prompts
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub Release tag, for example prompts-v1.0.0"
+        required: true
+        type: string
+      agent:
+        description: "Agent ID from manifest.json"
+        required: true
+        default: main
+        type: string
+      deploy_production:
+        description: "Promote the same artifact to production after staging"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  attestations: read
+  id-token: write
+
+concurrency:
+  group: deploy-openclaw-prompts-${{ inputs.agent }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  resolve:
+    name: Resolve release metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      package: ${{ steps.meta.outputs.package }}
+      checksum: ${{ steps.meta.outputs.checksum }}
+    steps:
+      - name: Validate release tag format
+        id: meta
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ ! "${RELEASE_TAG}" =~ ^prompts-v([0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?)$ ]]; then
+            echo "Invalid release tag: ${RELEASE_TAG}" >&2
+            exit 1
+          fi
+          VERSION="${RELEASE_TAG#prompts-v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "package=openclaw-prompts-${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=openclaw-prompts-${VERSION}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+
+  staging:
+    name: Deploy to staging
+    needs: resolve
+    runs-on: [self-hosted, linux, openclaw-staging]
+    environment:
+      name: staging
+    timeout-minutes: 20
+
+    steps:
+      - name: Prepare deployment directory
+        run: |
+          rm -rf "${RUNNER_TEMP}/openclaw-prompt-release"
+          mkdir -p "${RUNNER_TEMP}/openclaw-prompt-release/package"
+
+      - name: Download immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PACKAGE: ${{ needs.resolve.outputs.package }}
+          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
+        run: |
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GH_REPO}" \
+            --pattern "${PACKAGE}" \
+            --pattern "${CHECKSUM}" \
+            --dir "${RUNNER_TEMP}/openclaw-prompt-release"
+
+      - name: Verify checksum and provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ needs.resolve.outputs.package }}
+          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
+        run: |
+          cd "${RUNNER_TEMP}/openclaw-prompt-release"
+          sha256sum --check "${CHECKSUM}"
+          gh attestation verify "${PACKAGE}" --repo "${GITHUB_REPOSITORY}"
+
+      - name: Extract release
+        env:
+          PACKAGE: ${{ needs.resolve.outputs.package }}
+        run: |
+          tar --extract --gzip \
+            --file "${RUNNER_TEMP}/openclaw-prompt-release/${PACKAGE}" \
+            --directory "${RUNNER_TEMP}/openclaw-prompt-release/package"
+
+      - name: Dry-run deployment
+        env:
+          OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
+          OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
+          OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
+        run: |
+          "${RUNNER_TEMP}/openclaw-prompt-release/package/scripts/deploy.sh" \
+            --release "${RUNNER_TEMP}/openclaw-prompt-release/package" \
+            --environment staging \
+            --agent "${{ inputs.agent }}" \
+            --dry-run
+
+      - name: Deploy to staging
+        env:
+          OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
+          OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
+          OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
+          OPENCLAW_RUN_CONFIG_VALIDATE: ${{ vars.OPENCLAW_RUN_CONFIG_VALIDATE }}
+          OPENCLAW_RUN_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_SECURITY_AUDIT }}
+          OPENCLAW_RUN_DEEP_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_DEEP_SECURITY_AUDIT }}
+          OPENCLAW_RUN_GATEWAY_STATUS: ${{ vars.OPENCLAW_RUN_GATEWAY_STATUS }}
+          OPENCLAW_RUN_AGENTS_LIST: ${{ vars.OPENCLAW_RUN_AGENTS_LIST }}
+        run: |
+          RELEASE_DIR="${RUNNER_TEMP}/openclaw-prompt-release/package"
+          "${RELEASE_DIR}/scripts/deploy.sh" \
+            --release "${RELEASE_DIR}" \
+            --environment staging \
+            --agent "${{ inputs.agent }}"
+          "${RELEASE_DIR}/scripts/smoke-test.sh" \
+            --release "${RELEASE_DIR}" \
+            --environment staging \
+            --agent "${{ inputs.agent }}"
+
+      - name: Record staging deployment summary
+        run: |
+          {
+            echo "## OpenClaw prompt deployment"
+            echo "- Environment: staging"
+            echo "- Agent: ${{ inputs.agent }}"
+            echo "- Release: ${{ inputs.release_tag }}"
+            echo "- Artifact: ${{ needs.resolve.outputs.package }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  production:
+    name: Promote to production
+    if: ${{ inputs.deploy_production }}
+    needs: [resolve, staging]
+    runs-on: [self-hosted, linux, openclaw-production]
+    environment:
+      name: production
+    timeout-minutes: 20
+
+    steps:
+      - name: Prepare deployment directory
+        run: |
+          rm -rf "${RUNNER_TEMP}/openclaw-prompt-release"
+          mkdir -p "${RUNNER_TEMP}/openclaw-prompt-release/package"
+
+      - name: Download the same immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          PACKAGE: ${{ needs.resolve.outputs.package }}
+          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
+        run: |
+          gh release download "${RELEASE_TAG}" \
+            --repo "${GH_REPO}" \
+            --pattern "${PACKAGE}" \
+            --pattern "${CHECKSUM}" \
+            --dir "${RUNNER_TEMP}/openclaw-prompt-release"
+
+      - name: Verify checksum and provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE: ${{ needs.resolve.outputs.package }}
+          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
+        run: |
+          cd "${RUNNER_TEMP}/openclaw-prompt-release"
+          sha256sum --check "${CHECKSUM}"
+          gh attestation verify "${PACKAGE}" --repo "${GITHUB_REPOSITORY}"
+
+      - name: Extract release
+        env:
+          PACKAGE: ${{ needs.resolve.outputs.package }}
+        run: |
+          tar --extract --gzip \
+            --file "${RUNNER_TEMP}/openclaw-prompt-release/${PACKAGE}" \
+            --directory "${RUNNER_TEMP}/openclaw-prompt-release/package"
+
+      - name: Deploy and smoke test production
+        env:
+          OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
+          OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
+          OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
+          OPENCLAW_RUN_CONFIG_VALIDATE: ${{ vars.OPENCLAW_RUN_CONFIG_VALIDATE }}
+          OPENCLAW_RUN_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_SECURITY_AUDIT }}
+          OPENCLAW_RUN_DEEP_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_DEEP_SECURITY_AUDIT }}
+          OPENCLAW_RUN_GATEWAY_STATUS: ${{ vars.OPENCLAW_RUN_GATEWAY_STATUS }}
+          OPENCLAW_RUN_AGENTS_LIST: ${{ vars.OPENCLAW_RUN_AGENTS_LIST }}
+        run: |
+          RELEASE_DIR="${RUNNER_TEMP}/openclaw-prompt-release/package"
+          "${RELEASE_DIR}/scripts/deploy.sh" \
+            --release "${RELEASE_DIR}" \
+            --environment production \
+            --agent "${{ inputs.agent }}"
+          "${RELEASE_DIR}/scripts/smoke-test.sh" \
+            --release "${RELEASE_DIR}" \
+            --environment production \
+            --agent "${{ inputs.agent }}"
+
+      - name: Record production deployment summary
+        run: |
+          {
+            echo "## OpenClaw prompt deployment"
+            echo "- Environment: production"
+            echo "- Agent: ${{ inputs.agent }}"
+            echo "- Release: ${{ inputs.release_tag }}"
+            echo "- Artifact: ${{ needs.resolve.outputs.package }}"
+          } >> "$GITHUB_STEP_SUMMARY"

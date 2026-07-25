@@ -1,0 +1,103 @@
+name: Rollback prompts
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      agent:
+        description: "Agent ID"
+        required: true
+        default: main
+        type: string
+      backup_id:
+        description: "Backup ID; leave empty to use LATEST"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rollback-openclaw-prompts-${{ inputs.environment }}-${{ inputs.agent }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.agent }} in ${{ inputs.environment }}
+    runs-on: ${{ inputs.environment == 'production' && fromJSON('["self-hosted","linux","openclaw-production"]') || fromJSON('["self-hosted","linux","openclaw-staging"]') }}
+    environment:
+      name: ${{ inputs.environment }}
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout operational scripts
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Select rollback target
+        id: target
+        env:
+          BACKUP_ID: ${{ inputs.backup_id }}
+        run: |
+          if [[ -n "${BACKUP_ID}" ]]; then
+            echo "args=--backup ${BACKUP_ID}" >> "$GITHUB_OUTPUT"
+          else
+            echo "args=--latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: List available backups
+        env:
+          OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
+        run: |
+          ./scripts/list-backups.sh \
+            --environment "${{ inputs.environment }}" \
+            --agent "${{ inputs.agent }}"
+
+      - name: Apply rollback
+        env:
+          OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
+          OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
+        run: |
+          read -r -a TARGET_ARGS <<< "${{ steps.target.outputs.args }}"
+          ./scripts/rollback.sh \
+            --environment "${{ inputs.environment }}" \
+            --agent "${{ inputs.agent }}" \
+            "${TARGET_ARGS[@]}"
+
+      - name: Validate OpenClaw after rollback
+        env:
+          OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
+          OPENCLAW_RUN_CONFIG_VALIDATE: ${{ vars.OPENCLAW_RUN_CONFIG_VALIDATE }}
+          OPENCLAW_RUN_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_SECURITY_AUDIT }}
+          OPENCLAW_RUN_DEEP_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_DEEP_SECURITY_AUDIT }}
+          OPENCLAW_RUN_GATEWAY_STATUS: ${{ vars.OPENCLAW_RUN_GATEWAY_STATUS }}
+          OPENCLAW_RUN_AGENTS_LIST: ${{ vars.OPENCLAW_RUN_AGENTS_LIST }}
+        run: |
+          BIN="${OPENCLAW_BIN:-openclaw}"
+          "${BIN}" --version
+          [[ "${OPENCLAW_RUN_CONFIG_VALIDATE:-true}" != "true" ]] || "${BIN}" config validate
+          [[ "${OPENCLAW_RUN_SECURITY_AUDIT:-false}" != "true" ]] || "${BIN}" security audit
+          [[ "${OPENCLAW_RUN_DEEP_SECURITY_AUDIT:-false}" != "true" ]] || "${BIN}" security audit --deep
+          [[ "${OPENCLAW_RUN_GATEWAY_STATUS:-false}" != "true" ]] || "${BIN}" gateway status --deep
+          [[ "${OPENCLAW_RUN_AGENTS_LIST:-false}" != "true" ]] || "${BIN}" agents list --json
+
+      - name: Record rollback summary
+        run: |
+          {
+            echo "## OpenClaw prompt rollback"
+            echo "- Environment: ${{ inputs.environment }}"
+            echo "- Agent: ${{ inputs.agent }}"
+            echo "- Backup: ${{ inputs.backup_id || 'LATEST' }}"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,5 @@
+/agents/ @platform-ai
+/scripts/ @platform-ai @devops
+/.github/workflows/ @platform-ai @devops
+/schemas/ @platform-ai
+/manifest.yaml @platform-ai
