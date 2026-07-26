@@ -28,6 +28,29 @@
     "config/global/devices",
     "config/global/logs"
   ],
+  "deployment": {
+    "description": "Only these versioned prompt files are eligible for deployment. Runtime state and global configuration are provisioned separately on each host.",
+    "agents": {
+      "main": [
+        "AGENTS.md",
+        "HEARTBEAT.md",
+        "IDENTITY.md",
+        "SOUL.md",
+        "TOOLS.md",
+        "USER.md"
+      ],
+      "mpp_isis": [
+        "AGENTS.md",
+        "HEARTBEAT.md",
+        "IDENTITY.md",
+        "SOUL.md",
+        "TOOLS.md",
+        "USER.md",
+        "agent/agent.md",
+        "memory.md"
+      ]
+    }
+  },
   "runtimeExcluded": [
     "workspace-state.json",
     "auth-profiles.json",

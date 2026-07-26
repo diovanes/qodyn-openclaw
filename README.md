@@ -36,4 +36,8 @@ Os documentos de prompt residem diretamente no diretório de cada agente. Os est
 npm run check
 ```
 
+## Deploy
+
+O deploy é iniciado manualmente pela action **Deploy OpenClaw workspace**. Ela gera um pacote temporário a partir do ref selecionado, instala-o por SSH em staging e promove automaticamente o mesmo pacote para produção após o smoke test. Consulte o [runbook operacional](docs/OPERATIONS.md) para as variables e o secret SSH necessários.
+
 Consulte [a estrutura detalhada](docs/WORKSPACE_LAYOUT.md) e [o relatório de mapeamento](docs/relatorio-openclaw-mapeamento-2026-07-25.md) antes de adicionar arquivos ao workspace.

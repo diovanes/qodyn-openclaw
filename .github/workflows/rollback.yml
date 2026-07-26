@@ -1,23 +1,22 @@
-name: Rollback prompts
+name: Roll back OpenClaw workspace
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment"
+        description: Environment to roll back
         required: true
         default: staging
         type: choice
-        options:
-          - staging
-          - production
+        options: [staging, production]
       agent:
-        description: "Agent ID"
+        description: Deployable agent
         required: true
         default: main
-        type: string
+        type: choice
+        options: [main, mpp_isis]
       backup_id:
-        description: "Backup ID; leave empty to use LATEST"
+        description: Backup ID (leave blank to use LATEST)
         required: false
         type: string
 
@@ -25,79 +24,57 @@ permissions:
   contents: read
 
 concurrency:
-  group: rollback-openclaw-prompts-${{ inputs.environment }}-${{ inputs.agent }}
+  group: rollback-openclaw-workspace-${{ inputs.environment }}-${{ inputs.agent }}
   cancel-in-progress: false
 
-defaults:
-  run:
-    shell: bash
+env:
+  REMOTE_ROOT: /tmp/openclaw-workspace-rollback-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.agent }}
 
 jobs:
   rollback:
-    name: Rollback ${{ inputs.agent }} in ${{ inputs.environment }}
-    runs-on: ${{ inputs.environment == 'production' && fromJSON('["self-hosted","linux","openclaw-production"]') || fromJSON('["self-hosted","linux","openclaw-staging"]') }}
-    environment:
-      name: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     timeout-minutes: 15
-
     steps:
-      - name: Checkout operational scripts
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+
+      - name: Copy rollback tools to the target host
+        uses: appleboy/scp-action@v0.1.7
         with:
-          ref: main
+          host: ${{ vars.OPENCLAW_SSH_HOST }}
+          username: ${{ vars.OPENCLAW_SSH_USER }}
+          key: ${{ secrets.OPENCLAW_SSH_KEY }}
+          port: ${{ vars.OPENCLAW_SSH_PORT || 22 }}
+          source: scripts/common.sh,scripts/list-backups.sh,scripts/rollback.sh
+          target: ${{ env.REMOTE_ROOT }}
 
-      - name: Select rollback target
-        id: target
+      - name: List and restore the requested backup
+        uses: appleboy/ssh-action@v1.0.3
         env:
+          AGENT: ${{ inputs.agent }}
           BACKUP_ID: ${{ inputs.backup_id }}
-        run: |
-          if [[ -n "${BACKUP_ID}" ]]; then
-            echo "args=--backup ${BACKUP_ID}" >> "$GITHUB_OUTPUT"
-          else
-            echo "args=--latest" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: List available backups
-        env:
-          OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
-        run: |
-          ./scripts/list-backups.sh \
-            --environment "${{ inputs.environment }}" \
-            --agent "${{ inputs.agent }}"
-
-      - name: Apply rollback
-        env:
+          REMOTE_ROOT: ${{ env.REMOTE_ROOT }}
           OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
           OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
-        run: |
-          read -r -a TARGET_ARGS <<< "${{ steps.target.outputs.args }}"
-          ./scripts/rollback.sh \
-            --environment "${{ inputs.environment }}" \
-            --agent "${{ inputs.agent }}" \
-            "${TARGET_ARGS[@]}"
-
-      - name: Validate OpenClaw after rollback
-        env:
           OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
           OPENCLAW_RUN_CONFIG_VALIDATE: ${{ vars.OPENCLAW_RUN_CONFIG_VALIDATE }}
-          OPENCLAW_RUN_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_SECURITY_AUDIT }}
-          OPENCLAW_RUN_DEEP_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_DEEP_SECURITY_AUDIT }}
-          OPENCLAW_RUN_GATEWAY_STATUS: ${{ vars.OPENCLAW_RUN_GATEWAY_STATUS }}
-          OPENCLAW_RUN_AGENTS_LIST: ${{ vars.OPENCLAW_RUN_AGENTS_LIST }}
-        run: |
-          BIN="${OPENCLAW_BIN:-openclaw}"
-          "${BIN}" --version
-          [[ "${OPENCLAW_RUN_CONFIG_VALIDATE:-true}" != "true" ]] || "${BIN}" config validate
-          [[ "${OPENCLAW_RUN_SECURITY_AUDIT:-false}" != "true" ]] || "${BIN}" security audit
-          [[ "${OPENCLAW_RUN_DEEP_SECURITY_AUDIT:-false}" != "true" ]] || "${BIN}" security audit --deep
-          [[ "${OPENCLAW_RUN_GATEWAY_STATUS:-false}" != "true" ]] || "${BIN}" gateway status --deep
-          [[ "${OPENCLAW_RUN_AGENTS_LIST:-false}" != "true" ]] || "${BIN}" agents list --json
-
-      - name: Record rollback summary
-        run: |
-          {
-            echo "## OpenClaw prompt rollback"
-            echo "- Environment: ${{ inputs.environment }}"
-            echo "- Agent: ${{ inputs.agent }}"
-            echo "- Backup: ${{ inputs.backup_id || 'LATEST' }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+        with:
+          host: ${{ vars.OPENCLAW_SSH_HOST }}
+          username: ${{ vars.OPENCLAW_SSH_USER }}
+          key: ${{ secrets.OPENCLAW_SSH_KEY }}
+          port: ${{ vars.OPENCLAW_SSH_PORT || 22 }}
+          envs: AGENT,BACKUP_ID,REMOTE_ROOT,OPENCLAW_WORKSPACE_ROOT,OPENCLAW_BACKUP_ROOT,OPENCLAW_BIN,OPENCLAW_RUN_CONFIG_VALIDATE
+          script: |
+            set -eu
+            trap 'rm -rf "$REMOTE_ROOT"' EXIT
+            TOOLS_DIR="$(dirname "$(find "$REMOTE_ROOT" -type f -name rollback.sh -print -quit)")"
+            "$TOOLS_DIR/list-backups.sh" --agent "$AGENT"
+            if [ -n "$BACKUP_ID" ]; then
+              "$TOOLS_DIR/rollback.sh" --agent "$AGENT" --backup "$BACKUP_ID"
+            else
+              "$TOOLS_DIR/rollback.sh" --agent "$AGENT" --latest
+            fi
+            BIN="${OPENCLAW_BIN:-openclaw}"
+            if command -v "$BIN" >/dev/null && [ "${OPENCLAW_RUN_CONFIG_VALIDATE:-true}" = true ]; then
+              "$BIN" config validate
+            fi

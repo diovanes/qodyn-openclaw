@@ -1,120 +1,89 @@
-name: Deploy prompts
+name: Deploy OpenClaw workspace
 
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: "GitHub Release tag, for example prompts-v1.0.0"
-        required: true
-        type: string
-      agent:
-        description: "Agent ID from manifest.json"
+      ref:
+        description: Commit SHA, tag, or branch to deploy. The package is built once from this ref.
         required: true
         default: main
         type: string
-      deploy_production:
-        description: "Promote the same artifact to production after staging"
+      agent:
+        description: Deployable agent
         required: true
-        default: true
-        type: boolean
+        default: main
+        type: choice
+        options: [main, mpp_isis]
 
 permissions:
   contents: read
-  attestations: read
-  id-token: write
 
 concurrency:
-  group: deploy-openclaw-prompts-${{ inputs.agent }}
+  group: deploy-openclaw-workspace-${{ inputs.agent }}
   cancel-in-progress: false
 
-defaults:
-  run:
-    shell: bash
+env:
+  REMOTE_ROOT: /tmp/openclaw-workspace-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.agent }}
 
 jobs:
-  resolve:
-    name: Resolve release metadata
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      version: ${{ steps.meta.outputs.version }}
-      package: ${{ steps.meta.outputs.package }}
-      checksum: ${{ steps.meta.outputs.checksum }}
-    steps:
-      - name: Validate release tag format
-        id: meta
-        env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
-        run: |
-          if [[ ! "${RELEASE_TAG}" =~ ^prompts-v([0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?)$ ]]; then
-            echo "Invalid release tag: ${RELEASE_TAG}" >&2
-            exit 1
-          fi
-          VERSION="${RELEASE_TAG#prompts-v}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "package=openclaw-prompts-${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
-          echo "checksum=openclaw-prompts-${VERSION}.tar.gz.sha256" >> "$GITHUB_OUTPUT"
-
   staging:
-    name: Deploy to staging
-    needs: resolve
-    runs-on: [self-hosted, linux, openclaw-staging]
-    environment:
-      name: staging
+    name: Build and deploy to staging
+    runs-on: ubuntu-latest
+    environment: staging
     timeout-minutes: 20
+    outputs:
+      package_name: ${{ steps.package.outputs.package_name }}
 
     steps:
-      - name: Prepare deployment directory
-        run: |
-          rm -rf "${RUNNER_TEMP}/openclaw-prompt-release"
-          mkdir -p "${RUNNER_TEMP}/openclaw-prompt-release/package"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
-      - name: Download immutable release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          PACKAGE: ${{ needs.resolve.outputs.package }}
-          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
-        run: |
-          gh release download "${RELEASE_TAG}" \
-            --repo "${GH_REPO}" \
-            --pattern "${PACKAGE}" \
-            --pattern "${CHECKSUM}" \
-            --dir "${RUNNER_TEMP}/openclaw-prompt-release"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
 
-      - name: Verify checksum and provenance
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PACKAGE: ${{ needs.resolve.outputs.package }}
-          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
+      - name: Install dependencies and validate
         run: |
-          cd "${RUNNER_TEMP}/openclaw-prompt-release"
-          sha256sum --check "${CHECKSUM}"
-          gh attestation verify "${PACKAGE}" --repo "${GITHUB_REPOSITORY}"
+          npm ci --ignore-scripts
+          npm run check
 
-      - name: Extract release
+      - name: Package the selected agent once
+        id: package
         env:
-          PACKAGE: ${{ needs.resolve.outputs.package }}
+          AGENT: ${{ inputs.agent }}
         run: |
-          tar --extract --gzip \
-            --file "${RUNNER_TEMP}/openclaw-prompt-release/${PACKAGE}" \
-            --directory "${RUNNER_TEMP}/openclaw-prompt-release/package"
+          npm run package -- --agent "$AGENT"
+          PACKAGE="$(find artifacts -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$PACKAGE"
+          test -f "$PACKAGE.sha256"
+          echo "package_name=$(basename "$PACKAGE")" >> "$GITHUB_OUTPUT"
 
-      - name: Dry-run deployment
-        env:
-          OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
-          OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
-          OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
-        run: |
-          "${RUNNER_TEMP}/openclaw-prompt-release/package/scripts/deploy.sh" \
-            --release "${RUNNER_TEMP}/openclaw-prompt-release/package" \
-            --environment staging \
-            --agent "${{ inputs.agent }}" \
-            --dry-run
+      - name: Preserve the verified package for production
+        uses: actions/upload-artifact@v4
+        with:
+          name: openclaw-workspace-${{ github.run_id }}-${{ inputs.agent }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Deploy to staging
+      - name: Copy package to staging
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.OPENCLAW_SSH_HOST }}
+          username: ${{ vars.OPENCLAW_SSH_USER }}
+          key: ${{ secrets.OPENCLAW_SSH_KEY }}
+          port: ${{ vars.OPENCLAW_SSH_PORT || 22 }}
+          source: artifacts/
+          target: ${{ env.REMOTE_ROOT }}
+
+      - name: Install and validate staging
+        uses: appleboy/ssh-action@v1.0.3
         env:
+          AGENT: ${{ inputs.agent }}
+          ENVIRONMENT: staging
+          REMOTE_ROOT: ${{ env.REMOTE_ROOT }}
           OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
           OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
           OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
@@ -123,76 +92,61 @@ jobs:
           OPENCLAW_RUN_DEEP_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_DEEP_SECURITY_AUDIT }}
           OPENCLAW_RUN_GATEWAY_STATUS: ${{ vars.OPENCLAW_RUN_GATEWAY_STATUS }}
           OPENCLAW_RUN_AGENTS_LIST: ${{ vars.OPENCLAW_RUN_AGENTS_LIST }}
-        run: |
-          RELEASE_DIR="${RUNNER_TEMP}/openclaw-prompt-release/package"
-          "${RELEASE_DIR}/scripts/deploy.sh" \
-            --release "${RELEASE_DIR}" \
-            --environment staging \
-            --agent "${{ inputs.agent }}"
-          "${RELEASE_DIR}/scripts/smoke-test.sh" \
-            --release "${RELEASE_DIR}" \
-            --environment staging \
-            --agent "${{ inputs.agent }}"
-
-      - name: Record staging deployment summary
-        run: |
-          {
-            echo "## OpenClaw prompt deployment"
-            echo "- Environment: staging"
-            echo "- Agent: ${{ inputs.agent }}"
-            echo "- Release: ${{ inputs.release_tag }}"
-            echo "- Artifact: ${{ needs.resolve.outputs.package }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+        with:
+          host: ${{ vars.OPENCLAW_SSH_HOST }}
+          username: ${{ vars.OPENCLAW_SSH_USER }}
+          key: ${{ secrets.OPENCLAW_SSH_KEY }}
+          port: ${{ vars.OPENCLAW_SSH_PORT || 22 }}
+          envs: AGENT,ENVIRONMENT,REMOTE_ROOT,OPENCLAW_WORKSPACE_ROOT,OPENCLAW_BACKUP_ROOT,OPENCLAW_BIN,OPENCLAW_RUN_CONFIG_VALIDATE,OPENCLAW_RUN_SECURITY_AUDIT,OPENCLAW_RUN_DEEP_SECURITY_AUDIT,OPENCLAW_RUN_GATEWAY_STATUS,OPENCLAW_RUN_AGENTS_LIST
+          script: |
+            set -eu
+            trap 'rm -rf "$REMOTE_ROOT"' EXIT
+            ARCHIVE="$(find "$REMOTE_ROOT" -type f -name '*.tar.gz' -print -quit)"
+            test -n "$ARCHIVE"
+            test -f "$ARCHIVE.sha256"
+            (cd "$(dirname "$ARCHIVE")" && sha256sum --check "$(basename "$ARCHIVE").sha256")
+            RELEASE="$REMOTE_ROOT/release"
+            mkdir -p "$RELEASE"
+            tar -xzf "$ARCHIVE" -C "$RELEASE"
+            "$RELEASE/scripts/deploy.sh" --release "$RELEASE" --environment "$ENVIRONMENT" --agent "$AGENT"
+            "$RELEASE/scripts/smoke-test.sh" --release "$RELEASE" --environment "$ENVIRONMENT" --agent "$AGENT"
 
   production:
-    name: Promote to production
-    if: ${{ inputs.deploy_production }}
-    needs: [resolve, staging]
-    runs-on: [self-hosted, linux, openclaw-production]
-    environment:
-      name: production
+    name: Promote the same package to production
+    needs: staging
+    runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 20
 
     steps:
-      - name: Prepare deployment directory
-        run: |
-          rm -rf "${RUNNER_TEMP}/openclaw-prompt-release"
-          mkdir -p "${RUNNER_TEMP}/openclaw-prompt-release/package"
+      - name: Download the package deployed to staging
+        uses: actions/download-artifact@v4
+        with:
+          name: openclaw-workspace-${{ github.run_id }}-${{ inputs.agent }}
+          path: artifacts
 
-      - name: Download the same immutable release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ inputs.release_tag }}
-          PACKAGE: ${{ needs.resolve.outputs.package }}
-          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
+      - name: Verify package checksum before transport
         run: |
-          gh release download "${RELEASE_TAG}" \
-            --repo "${GH_REPO}" \
-            --pattern "${PACKAGE}" \
-            --pattern "${CHECKSUM}" \
-            --dir "${RUNNER_TEMP}/openclaw-prompt-release"
+          ARCHIVE="$(find artifacts -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$ARCHIVE"
+          (cd "$(dirname "$ARCHIVE")" && sha256sum --check "$(basename "$ARCHIVE").sha256")
 
-      - name: Verify checksum and provenance
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PACKAGE: ${{ needs.resolve.outputs.package }}
-          CHECKSUM: ${{ needs.resolve.outputs.checksum }}
-        run: |
-          cd "${RUNNER_TEMP}/openclaw-prompt-release"
-          sha256sum --check "${CHECKSUM}"
-          gh attestation verify "${PACKAGE}" --repo "${GITHUB_REPOSITORY}"
+      - name: Copy the staged package to production
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.OPENCLAW_SSH_HOST }}
+          username: ${{ vars.OPENCLAW_SSH_USER }}
+          key: ${{ secrets.OPENCLAW_SSH_KEY }}
+          port: ${{ vars.OPENCLAW_SSH_PORT || 22 }}
+          source: artifacts/
+          target: ${{ env.REMOTE_ROOT }}
 
-      - name: Extract release
+      - name: Install and validate production
+        uses: appleboy/ssh-action@v1.0.3
         env:
-          PACKAGE: ${{ needs.resolve.outputs.package }}
-        run: |
-          tar --extract --gzip \
-            --file "${RUNNER_TEMP}/openclaw-prompt-release/${PACKAGE}" \
-            --directory "${RUNNER_TEMP}/openclaw-prompt-release/package"
-
-      - name: Deploy and smoke test production
-        env:
+          AGENT: ${{ inputs.agent }}
+          ENVIRONMENT: production
+          REMOTE_ROOT: ${{ env.REMOTE_ROOT }}
           OPENCLAW_WORKSPACE_ROOT: ${{ vars.OPENCLAW_WORKSPACE_ROOT }}
           OPENCLAW_BACKUP_ROOT: ${{ vars.OPENCLAW_BACKUP_ROOT }}
           OPENCLAW_BIN: ${{ vars.OPENCLAW_BIN }}
@@ -201,23 +155,21 @@ jobs:
           OPENCLAW_RUN_DEEP_SECURITY_AUDIT: ${{ vars.OPENCLAW_RUN_DEEP_SECURITY_AUDIT }}
           OPENCLAW_RUN_GATEWAY_STATUS: ${{ vars.OPENCLAW_RUN_GATEWAY_STATUS }}
           OPENCLAW_RUN_AGENTS_LIST: ${{ vars.OPENCLAW_RUN_AGENTS_LIST }}
-        run: |
-          RELEASE_DIR="${RUNNER_TEMP}/openclaw-prompt-release/package"
-          "${RELEASE_DIR}/scripts/deploy.sh" \
-            --release "${RELEASE_DIR}" \
-            --environment production \
-            --agent "${{ inputs.agent }}"
-          "${RELEASE_DIR}/scripts/smoke-test.sh" \
-            --release "${RELEASE_DIR}" \
-            --environment production \
-            --agent "${{ inputs.agent }}"
-
-      - name: Record production deployment summary
-        run: |
-          {
-            echo "## OpenClaw prompt deployment"
-            echo "- Environment: production"
-            echo "- Agent: ${{ inputs.agent }}"
-            echo "- Release: ${{ inputs.release_tag }}"
-            echo "- Artifact: ${{ needs.resolve.outputs.package }}"
-          } >> "$GITHUB_STEP_SUMMARY"
+        with:
+          host: ${{ vars.OPENCLAW_SSH_HOST }}
+          username: ${{ vars.OPENCLAW_SSH_USER }}
+          key: ${{ secrets.OPENCLAW_SSH_KEY }}
+          port: ${{ vars.OPENCLAW_SSH_PORT || 22 }}
+          envs: AGENT,ENVIRONMENT,REMOTE_ROOT,OPENCLAW_WORKSPACE_ROOT,OPENCLAW_BACKUP_ROOT,OPENCLAW_BIN,OPENCLAW_RUN_CONFIG_VALIDATE,OPENCLAW_RUN_SECURITY_AUDIT,OPENCLAW_RUN_DEEP_SECURITY_AUDIT,OPENCLAW_RUN_GATEWAY_STATUS,OPENCLAW_RUN_AGENTS_LIST
+          script: |
+            set -eu
+            trap 'rm -rf "$REMOTE_ROOT"' EXIT
+            ARCHIVE="$(find "$REMOTE_ROOT" -type f -name '*.tar.gz' -print -quit)"
+            test -n "$ARCHIVE"
+            test -f "$ARCHIVE.sha256"
+            (cd "$(dirname "$ARCHIVE")" && sha256sum --check "$(basename "$ARCHIVE").sha256")
+            RELEASE="$REMOTE_ROOT/release"
+            mkdir -p "$RELEASE"
+            tar -xzf "$ARCHIVE" -C "$RELEASE"
+            "$RELEASE/scripts/deploy.sh" --release "$RELEASE" --environment "$ENVIRONMENT" --agent "$AGENT"
+            "$RELEASE/scripts/smoke-test.sh" --release "$RELEASE" --environment "$ENVIRONMENT" --agent "$AGENT"
