@@ -69,7 +69,7 @@ jobs:
           retention-days: 1
 
       - name: Copy package to staging
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ vars.OPENCLAW_SSH_HOST }}
           username: ${{ vars.OPENCLAW_SSH_USER }}
@@ -132,7 +132,7 @@ jobs:
           (cd "$(dirname "$ARCHIVE")" && sha256sum --check "$(basename "$ARCHIVE").sha256")
 
       - name: Copy the staged package to production
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ vars.OPENCLAW_SSH_HOST }}
           username: ${{ vars.OPENCLAW_SSH_USER }}
