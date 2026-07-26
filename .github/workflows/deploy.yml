@@ -61,7 +61,7 @@ jobs:
           echo "package_name=$(basename "$PACKAGE")" >> "$GITHUB_OUTPUT"
 
       - name: Preserve the verified package for production
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: openclaw-workspace-${{ github.run_id }}-${{ inputs.agent }}
           path: artifacts/
