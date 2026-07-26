@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/common.sh
 source "$SCRIPT_DIR/common.sh"
 AGENT=""
 while [[ $# -gt 0 ]]; do
