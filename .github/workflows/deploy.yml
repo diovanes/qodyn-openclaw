@@ -79,7 +79,7 @@ jobs:
           target: ${{ env.REMOTE_ROOT }}
 
       - name: Install and validate staging
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         env:
           AGENT: ${{ inputs.agent }}
           ENVIRONMENT: staging
@@ -142,7 +142,7 @@ jobs:
           target: ${{ env.REMOTE_ROOT }}
 
       - name: Install and validate production
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         env:
           AGENT: ${{ inputs.agent }}
           ENVIRONMENT: production
