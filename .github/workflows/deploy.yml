@@ -120,7 +120,7 @@ jobs:
 
     steps:
       - name: Download the package deployed to staging
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: openclaw-workspace-${{ github.run_id }}-${{ inputs.agent }}
           path: artifacts
