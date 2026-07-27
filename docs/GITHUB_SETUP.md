@@ -10,20 +10,23 @@
 
 ## Environments
 
+O deploy roda em `ubuntu-latest` e se conecta à VPS de destino por SSH/SCP (ver `docs/OPERATIONS.md`),
+não em runner self-hosted.
+
 ### staging
 
-Runner: `self-hosted, linux, openclaw-staging`.
+Configurada. Todos os deploys vão para cá enquanto `production` não existir.
 
 ### production
 
-Runner: `self-hosted, linux, openclaw-production`, com aprovação obrigatória.
+Ainda não configurada. O workflow `Deploy OpenClaw workspace` só promove para produção quando o
+input `promote_to_production` é `true`; mantenha-o `false` até este Environment ser criado.
 
-## Variáveis
+## Variáveis e secrets
 
-- `OPENCLAW_WORKSPACE_ROOT`
-- `OPENCLAW_BACKUP_ROOT`
-- `OPENCLAW_CONFIG_PATH`
-- `OPENCLAW_STATE_DIR`
+Ver a lista completa e o passo a passo em `docs/OPERATIONS.md` (`OPENCLAW_SSH_HOST`,
+`OPENCLAW_SSH_USER`, `OPENCLAW_SSH_PORT`, `OPENCLAW_WORKSPACE_ROOT`, `OPENCLAW_BACKUP_ROOT`,
+`OPENCLAW_BIN`, `OPENCLAW_RUN_*` e o secret `OPENCLAW_SSH_KEY`).
 
 ## Tags
 

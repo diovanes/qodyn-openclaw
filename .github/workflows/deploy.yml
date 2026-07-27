@@ -14,6 +14,11 @@ on:
         default: main
         type: choice
         options: [main, mpp_isis]
+      promote_to_production:
+        description: Promote the staged package to production after the staging smoke test passes. Leave off while the production environment is not yet configured.
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -114,6 +119,7 @@ jobs:
   production:
     name: Promote the same package to production
     needs: staging
+    if: ${{ inputs.promote_to_production }}
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 20

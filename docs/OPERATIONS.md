@@ -1,8 +1,16 @@
 # Runbook operacional
 
+## Estado atual: somente staging
+
+Por enquanto, a VPS de `production` ainda não foi provisionada/configurada. Todos os deploys devem
+ir para `staging`. O workflow `Deploy OpenClaw workspace` tem um input `promote_to_production`
+(boolean, default `false`) que controla se o job `production` roda; deixe-o desmarcado (`false`)
+até a VPS de produção ser configurada. Quando `production` estiver pronta, configure o Environment
+conforme abaixo e passe `promote_to_production: true` para promover.
+
 ## Pré-requisitos no GitHub
 
-Crie os Environments `staging` e `production`. Em cada um, configure as variables:
+Crie o Environment `staging` (e, futuramente, `production`). Em cada um, configure as variables:
 
 - `OPENCLAW_SSH_HOST`, `OPENCLAW_SSH_USER` e `OPENCLAW_SSH_PORT`;
 - `OPENCLAW_WORKSPACE_ROOT` e `OPENCLAW_BACKUP_ROOT`;
@@ -12,15 +20,15 @@ Adicione `OPENCLAW_SSH_KEY` como secret do Environment. O usuário SSH deve pode
 
 ## Deploy
 
-Em **Actions → Deploy OpenClaw workspace → Run workflow**, informe o commit SHA, tag ou branch e selecione o agente. A action:
+Em **Actions → Deploy OpenClaw workspace → Run workflow**, informe o commit SHA, tag ou branch, selecione o agente e defina `promote_to_production` (`false` enquanto só staging estiver configurada). A action:
 
 1. valida e empacota uma única vez os arquivos declarados em `manifest.json`;
 2. verifica o checksum e faz deploy em staging por SCP/SSH;
 3. executa o smoke test em staging;
-4. promove automaticamente o mesmo arquivo, com o mesmo checksum, para produção;
-5. executa o smoke test em produção.
+4. se `promote_to_production` for `true`, promove automaticamente o mesmo arquivo, com o mesmo checksum, para produção;
+5. executa o smoke test em produção (somente quando o passo 4 rodar).
 
-O workflow não recria o pacote entre staging e produção. Se houver regras de aprovação configuradas no Environment `production`, o GitHub poderá pausar a promoção até a aprovação; sem essa proteção, ela é automática após staging.
+O workflow não recria o pacote entre staging e produção. Se houver regras de aprovação configuradas no Environment `production`, o GitHub poderá pausar a promoção até a aprovação; sem essa proteção, ela é automática após staging (quando `promote_to_production: true`).
 
 ## Escopo do pacote
 
