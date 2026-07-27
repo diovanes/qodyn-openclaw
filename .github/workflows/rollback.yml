@@ -49,7 +49,7 @@ jobs:
           target: ${{ env.REMOTE_ROOT }}
 
       - name: List and restore the requested backup
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         env:
           AGENT: ${{ inputs.agent }}
           BACKUP_ID: ${{ inputs.backup_id }}
