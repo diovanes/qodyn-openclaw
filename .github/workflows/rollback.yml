@@ -36,7 +36,7 @@ jobs:
     environment: ${{ inputs.environment }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Copy rollback tools to the target host
         uses: appleboy/scp-action@v0.1.7
