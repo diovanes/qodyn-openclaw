@@ -109,7 +109,7 @@ jobs:
             ARCHIVE="$(find "$REMOTE_ROOT" -type f -name '*.tar.gz' -print -quit)"
             test -n "$ARCHIVE"
             test -f "$ARCHIVE.sha256"
-            (cd "$(dirname "$ARCHIVE")" && sha256sum --check "$(basename "$ARCHIVE").sha256")
+            (cd "$REMOTE_ROOT" && sha256sum --check "$ARCHIVE.sha256")
             RELEASE="$REMOTE_ROOT/release"
             mkdir -p "$RELEASE"
             tar -xzf "$ARCHIVE" -C "$RELEASE"
@@ -135,7 +135,7 @@ jobs:
         run: |
           ARCHIVE="$(find artifacts -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
           test -n "$ARCHIVE"
-          (cd "$(dirname "$ARCHIVE")" && sha256sum --check "$(basename "$ARCHIVE").sha256")
+          sha256sum --check "$ARCHIVE.sha256"
 
       - name: Copy the staged package to production
         uses: appleboy/scp-action@v0.1.7
@@ -173,7 +173,7 @@ jobs:
             ARCHIVE="$(find "$REMOTE_ROOT" -type f -name '*.tar.gz' -print -quit)"
             test -n "$ARCHIVE"
             test -f "$ARCHIVE.sha256"
-            (cd "$(dirname "$ARCHIVE")" && sha256sum --check "$(basename "$ARCHIVE").sha256")
+            (cd "$REMOTE_ROOT" && sha256sum --check "$ARCHIVE.sha256")
             RELEASE="$REMOTE_ROOT/release"
             mkdir -p "$RELEASE"
             tar -xzf "$ARCHIVE" -C "$RELEASE"
